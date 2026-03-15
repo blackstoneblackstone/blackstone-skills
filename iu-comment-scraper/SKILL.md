@@ -21,7 +21,7 @@ description: 从 berriz.in API 爬取 IU 回复的评论数据，自动翻译韩
 ### 在 OpenClaw 会话中调用
 
 ```
-帮我抓取 berriz.in 上 IU 回复的评论数据
+给我 IU 的回帖
 ```
 
 AI 会自动：

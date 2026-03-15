@@ -11,6 +11,12 @@
 
 ## 使用
 
+### OpenClaw 会话
+```
+给我 IU 的回帖
+```
+
+### 命令行
 ```bash
 python3 scripts/iu_api_scraper.py
 ```

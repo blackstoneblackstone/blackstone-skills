@@ -24,6 +24,7 @@ import re
 # API 配置
 LIST_API = "https://svc-api.berriz.in/service/v2/community/5/artist/archive"
 REPLY_API = "https://svc-api.berriz.in/service/v1/comment/{comment_id}/replies"
+COMMENT_DETAIL_API = "https://svc-api.berriz.in/service/v1/comment/comments/{comment_id}"
 
 # 默认请求头（Cookie 需要定期更新）
 DEFAULT_HEADERS = {
@@ -176,7 +177,8 @@ def fetch_post_list(page=1, page_size=PAGE_SIZE):
         resp = requests.get(LIST_API, headers=get_headers(), params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        return data.get("data", {}).get("list", [])
+        # 数据结构：data.contents 是列表
+        return data.get("data", {}).get("contents", [])
     except Exception as e:
         print(f"❌ 获取帖子列表失败：{e}")
         return []
@@ -236,10 +238,10 @@ def extract_images_from_content(content_obj):
     return images
 
 def process_post(post_data):
-    """处理单个帖子数据"""
+    """处理单个帖子数据（这是 IU 的回复，需要获取原帖）"""
     result = {
-        "post_id": post_data.get("id") or post_data.get("commentId") or post_data.get("postId", ""),
-        "comment_id": post_data.get("commentId") or post_data.get("id", ""),
+        "post_id": post_data.get("postId", ""),
+        "comment_id": post_data.get("contentId", ""),
         
         "post_author": None,
         "post_author_ko": None,
@@ -254,57 +256,91 @@ def process_post(post_data):
         "images": [],
     }
     
-    # 提取作者信息
-    author = post_data.get("author") or post_data.get("user") or {}
-    result["post_author"] = author.get("nickname") or author.get("name") or author.get("username", "Unknown")
-    result["post_author_ko"] = result["post_author"] if contains_korean(result["post_author"]) else None
+    # IU 回复的内容（body 字段）
+    iu_content = post_data.get("body", "")
+    result["iu_reply_content"] = iu_content if iu_content else None
     
-    # 提取帖子内容
-    content = post_data.get("content") or post_data.get("text") or post_data.get("message", "")
-    result["post_content"] = extract_text_from_content(content)
+    # 翻译 IU 回复
+    if result["iu_reply_content"] and contains_korean(result["iu_reply_content"]):
+        result["iu_reply_content_zh"] = translate_text(result["iu_reply_content"])
     
-    # 翻译帖子内容
-    if result["post_content"] and contains_korean(result["post_content"]):
-        result["post_content_zh"] = translate_text(result["post_content"])
+    # IU 回复时间
+    result["iu_reply_created_at"] = post_data.get("createdAt", "")
     
-    # 提取时间
-    result["post_created_at"] = post_data.get("createdAt") or post_data.get("created_at") or post_data.get("time", "")
+    # 原帖信息（从 replyInfo 获取）
+    parent_id = None
+    reply_info = post_data.get("replyInfo", {})
+    if reply_info.get("isReply"):
+        result["post_author"] = reply_info.get("authorName", "Unknown")
+        result["post_author_ko"] = result["post_author"] if contains_korean(result["post_author"] or "") else None
+        
+        # 原帖 ID（parentCommentSeq）- 用于获取原帖内容
+        parent_id = reply_info.get("parentCommentSeq", "")
+        if parent_id:
+            result["comment_id"] = str(parent_id)
     
     # 提取图片
-    images = extract_images_from_content(post_data)
-    if not images and "imageUrl" in post_data:
-        images.append(post_data["imageUrl"])
+    images = []
+    image_url = post_data.get("imageUrl")
+    if image_url:
+        images.append(image_url)
     
     # 下载图片
     downloaded_images = []
-    for img_url in images[:10]:  # 最多下载 10 张
+    for img_url in images[:10]:
         saved_path = download_image(img_url, result["post_id"], result["comment_id"])
         if saved_path:
             downloaded_images.append(saved_path)
     
     result["images"] = downloaded_images
     
-    # 查找 IU 的回复
-    replies = fetch_comment_replies(result["comment_id"])
-    time.sleep(0.5)  # 避免请求过快
-    
-    for reply in replies:
-        reply_author = reply.get("author") or reply.get("user") or {}
-        author_name = reply_author.get("nickname") or reply_author.get("name", "")
-        
-        # 判断是否是 IU 的回复（作者名包含 IU 或特定标识）
-        if "IU" in author_name.upper() or "아이유" in author_name:
-            reply_content = reply.get("content") or reply.get("text") or reply.get("message", "")
-            result["iu_reply_content"] = extract_text_from_content(reply_content)
+    # 获取原帖详情（使用 parentCommentSeq 调用 comment detail API）
+    if parent_id:
+        time.sleep(0.3)
+        original_post = fetch_original_post(str(parent_id))
+        if original_post:
+            # 原帖内容在 element.text
+            elem = original_post.get("element", {})
+            result["post_content"] = elem.get("text", "")
+            result["post_created_at"] = elem.get("createdAt", "")
             
-            # 翻译 IU 回复
-            if result["iu_reply_content"] and contains_korean(result["iu_reply_content"]):
-                result["iu_reply_content_zh"] = translate_text(result["iu_reply_content"])
+            # 原帖作者（从原帖 API 获取更准确）
+            author = original_post.get("author", {})
+            result["post_author"] = author.get("authorDisplayName", result["post_author"])
+            result["post_author_ko"] = result["post_author"] if contains_korean(result["post_author"] or "") else None
             
-            result["iu_reply_created_at"] = reply.get("createdAt") or reply.get("created_at", "")
-            break
+            # 翻译原帖内容
+            if result["post_content"] and contains_korean(result["post_content"]):
+                result["post_content_zh"] = translate_text(result["post_content"])
+            
+            # 原帖图片
+            media = original_post.get("media", {})
+            photos = media.get("photo", [])
+            for photo in photos[:5]:
+                if isinstance(photo, dict) and "url" in photo:
+                    saved_path = download_image(photo["url"], result["post_id"], result["comment_id"])
+                    if saved_path and saved_path not in result["images"]:
+                        result["images"].append(saved_path)
     
     return result
+
+def fetch_original_post(parent_comment_seq):
+    """获取原帖详情（通过 comment detail API）"""
+    url = COMMENT_DETAIL_API.format(comment_id=parent_comment_seq)
+    params = {"languageCode": "zh-Hans"}
+    
+    try:
+        resp = requests.get(url, headers=get_headers(), params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        # 返回 data.content 对象
+        return data.get("data", {}).get("content", {})
+    except Exception as e:
+        print(f"⚠️ 获取原帖失败 {parent_comment_seq}: {e}")
+    
+    return None
+
+
 
 def save_to_database(conn, data):
     """保存数据到数据库"""

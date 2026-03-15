@@ -15,6 +15,7 @@ import time
 import sqlite3
 import hashlib
 import requests
+import random
 from datetime import datetime
 from pathlib import Path
 import re
@@ -26,26 +27,25 @@ LIST_API = "https://svc-api.berriz.in/service/v2/community/5/artist/archive"
 REPLY_API = "https://svc-api.berriz.in/service/v1/comment/{comment_id}/replies"
 COMMENT_DETAIL_API = "https://svc-api.berriz.in/service/v1/comment/comments/{comment_id}"
 
-# 默认请求头（Cookie 需要定期更新）
-DEFAULT_HEADERS = {
-    "accept": "application/json",
-    "accept-language": "zh-CN,zh;q=0.9",
-    "cache-control": "no-cache",
-    "origin": "https://berriz.in",
-    "pragma": "no-cache",
-    "priority": "u=1, i",
-    "referer": "https://berriz.in/",
-    "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-site",
-    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-}
+# 默认请求头（不需要 Cookie，公开 API）
+# 使用常见的 User-Agent 避免被封
+USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+]
 
-# Cookie（需要从浏览器复制，定期更新）
-DEFAULT_COOKIE = "pcid=6e8XflYk0zjCkvaW3XxPJ; pacode=fanplatf::web:mac:pc:; app_install_confirmed=TRUE; currency_code=USD; country_code=CN; _ga=GA1.1.1096434322.1773579708; cookie_policy_confirmed=TRUE; bz_r=52fcIxDFkkrVx0vn43MMTwvS6xHQxaqLveglYMfRAgbGN9kwlKEhvKUSwg6APnDE1ohktlAf4Sr3jiMPN; NEXT_LOCALE=zh-Hans; bz_a=eyJraWQiOiJUUWVSeENZSFhDMkxNQTdFY0Rma1hBQ3loSzBjMlAzajZ6VHZXT2h3Ujl3IiwiYWxnIjoiUlMyNTYifQ.eyJpc3MiOiJhY2NvdW50LmJlcnJpei5pbiIsImlhdCI6MTc3MzU4NTI3NSwiZXhwIjoxNzczNTg4ODc1LCJzdWIiOiIwMTlhZGQyNS05ODJiLTI3MWUtMGJjMi0wZTA1Y2QxNDE0ZjAiLCJpZHBOYW1lIjoiR09PR0xFIn0.RoRBguTaUEbxbRH5uNMtRqKgmfiZGj97zoFdONvpxMY3iA7kpBraHeLjJkQlUb83OZxm32z36ZLC3ml0X3zBUOIFgYp4Ux9ppOTEWn-SVPkxl8S63J6kVAGA_iZLXVEb-ZopokpCBnzvybS9K_iyOITTfRW24rj9bhazMKoaaczxkPBsMGXXl6dbERKHVj33ttqMXmUyWzfzvmpCx1Lqu83C-0xnBx9EXhV_-wgDTi14EeNoPqAf5QwRUK8fNSgQg-oVHYLymIZ_v4eT0pdckmfrk4QEu6vutGqNJTTXN2s9684ndQKAxx7wmTvB0uO5JY2lMPZCo8VxorFxG1SuCA; _ga_2BNCQ4LPP9=GS2.1.s1773585249$o2$g1$t1773585653$j60$l0$h0; _T_ANO=Jq1rfHRExnYiHbJ0eP4FoIWQYRombjsUKPRyrglldehjxuie+F3jR6HwaMSNWjE6DQlCsWe2FhjPgzQhukix0jKzhvI4khwPWCY3bLk1ez9Rhx10JULBeOgHtJyZfZbmv0UlBEydRBttdGq5pOsJxXU2wSREPER5AVWXBm4btjmJoktrs7JzyaNC9EUwPQavI9CUbnXY/KJxXtSMQX36Q6qNWg0cWS+2WJJuukgEDXC+cWKqwSern4fOnPboqjVWORZ0eAsUSh2dAb68qtLaJmzjq1UXqH0NSCBr7+U3S1nmnOvo65vgzUhpIynXA/VIB8fcisB/iB7mzhImWvmnvQ=="
+def get_headers():
+    """获取请求头，随机 User-Agent 模拟真人"""
+    import random
+    return {
+        "accept": "application/json",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "user-agent": random.choice(USER_AGENTS),
+        "referer": "https://berriz.in/",
+        "origin": "https://berriz.in",
+    }
 
 # 数据库配置
 SCRIPT_DIR = Path(__file__).parent
@@ -59,13 +59,15 @@ TRANSLATE_API = "https://translate.googleapis.com/translate_a/single?client=gtx&
 MAX_POSTS = 50  # 最多抓取多少个帖子
 PAGE_SIZE = 20  # 每页多少条
 
+# 防封配置
+REQUEST_DELAY_MIN = 0.5  # 最小延迟（秒）
+REQUEST_DELAY_MAX = 1.5  # 最大延迟（秒）
+PAGE_DELAY_MIN = 1.0  # 页间最小延迟（秒）
+PAGE_DELAY_MAX = 3.0  # 页间最大延迟（秒）
+
 # ==================== 工具函数 ====================
 
-def get_headers():
-    """获取请求头，包含 Cookie"""
-    headers = DEFAULT_HEADERS.copy()
-    headers["cookie"] = DEFAULT_COOKIE
-    return headers
+
 
 def contains_korean(text):
     """检查是否包含韩文"""
@@ -442,10 +444,12 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
                     print(f"   🖼️ 图片：{len(data['images'])} 张")
             
             total_posts += 1
-            time.sleep(0.3)  # 避免请求过快
+            # 随机延迟，模拟真人操作
+            time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
         
         page += 1
-        time.sleep(1)
+        # 页间更大的随机延迟
+        time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
     
     conn.close()
     

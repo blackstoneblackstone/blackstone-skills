@@ -381,10 +381,17 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
     
     # 创建数据库
     conn = create_database(DB_PATH)
+    cursor = conn.cursor()
     print(f"\n📁 数据库：{DB_PATH}")
     print(f"📂 图片目录：{IMAGES_DIR}")
     
+    # 获取已保存的 comment_id 列表（避免重复抓取）
+    cursor.execute("SELECT comment_id FROM iu_comments")
+    existing_ids = set(row[0] for row in cursor.fetchall())
+    print(f"📊 数据库中已有 {len(existing_ids)} 条数据")
+    
     total_saved = 0
+    total_skipped = 0
     total_posts = 0
     page = 1
     
@@ -402,7 +409,17 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
             if total_posts >= max_posts:
                 break
             
-            print(f"\n   [{total_posts + 1}] 处理帖子 {post.get('id', 'unknown')}...")
+            comment_id = post.get("contentId", "")
+            post_id = post.get("postId", "")
+            
+            # 检查是否已存在
+            if comment_id in existing_ids:
+                print(f"\n   [{total_posts + 1}] ⏭️  跳过已保存的帖子 {comment_id}")
+                total_skipped += 1
+                total_posts += 1
+                continue
+            
+            print(f"\n   [{total_posts + 1}] 处理帖子 {comment_id}...")
             
             # 处理帖子
             data = process_post(post)
@@ -410,6 +427,7 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
             # 保存数据库
             if save_to_database(conn, data):
                 total_saved += 1
+                existing_ids.add(comment_id)  # 添加到已存在列表
                 print(f"   ✓ 已保存")
                 
                 # 显示摘要
@@ -432,12 +450,13 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
     conn.close()
     
     print("\n" + "=" * 60)
-    print(f"✨ 完成！共保存 {total_saved} 条数据")
+    print(f"✨ 完成！新保存 {total_saved} 条，跳过 {total_skipped} 条")
     print("=" * 60)
     
     return {
         "success": True,
         "total_saved": total_saved,
+        "total_skipped": total_skipped,
         "db_path": str(DB_PATH),
         "images_dir": str(IMAGES_DIR),
     }

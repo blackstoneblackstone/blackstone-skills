@@ -15,6 +15,7 @@ metadata: {"clawdbot":{"emoji":"📝","requires":{"anyBins":["git","ssh"]},"os":
 - ✅ 直接输入内容发布
 - ✅ 自动生成 Jekyll 格式的前置元数据
 - ✅ 自动提交并推送到 GitHub
+- ✅ 图文文章图片自动上传（使用 Wrangler + R2，支持 Markdown 中的图片链接）
 
 ## 使用方法
 
@@ -84,6 +85,32 @@ pip install requests
 ### 🔑 SSH 密钥
 
 确保已配置 GitHub SSH 密钥，或者设置 `GITHUB_TOKEN` 环境变量使用 HTTPS。
+
+### 🖼️ 图片处理（图文文章）
+
+如果 Markdown 文章包含图片链接，发布流程会：
+
+1. **提取图片**：从 Markdown 内容中提取所有图片链接（支持 `![alt](url)` 和 `<img>` 标签）
+2. **上传到 R2**：使用 Wrangler CLI 将图片上传到 Cloudflare R2
+3. **替换 URL**：将图片链接替换为 R2 的公开 URL
+
+**配置 R2 上传：**
+
+```bash
+# 设置 R2 存储桶名称
+export BLOG_R2_BUCKET="your-blog-images-bucket"
+
+# 设置图片域名（用于生成 URL）
+export BLOG_IMAGE_DOMAIN="https://images.yourdomain.com"
+```
+
+**Wrangler 配置要求：**
+
+确保本地已配置 Wrangler 并有权限访问 R2：
+```bash
+wrangler whoami  # 检查登录状态
+wrangler r2 bucket list  # 检查 R2 权限
+```
 
 ### 📝 文章格式
 

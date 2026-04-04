@@ -56,7 +56,7 @@ IMAGES_DIR = SCRIPT_DIR / "images"
 TRANSLATE_API = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=zh-CN&dt=t&q={text}"
 
 # 抓取配置
-MAX_POSTS = 50  # 最多抓取多少个帖子
+MAX_PAGES = 50  # 列表游标分页：最多拉取多少「页」
 PAGE_SIZE = 20  # 每页多少条
 
 # 防封配置
@@ -167,23 +167,31 @@ def create_database(db_path):
 
 # ==================== 核心抓取逻辑 ====================
 
-def fetch_post_list(page=1, page_size=PAGE_SIZE):
-    """获取帖子列表"""
+def fetch_post_list(next_cursor=None, page_size=PAGE_SIZE):
+    """
+    获取帖子列表（游标分页：首请求不传 next，后续传上一页返回的 data.cursor.next）
+    """
     params = {
         "communityId": 5,
         "pageSize": page_size,
         "languageCode": "zh-Hans",
     }
-    
+    if next_cursor is not None:
+        params["next"] = next_cursor
+
     try:
         resp = requests.get(LIST_API, headers=get_headers(), params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        # 数据结构：data.contents 是列表
-        return data.get("data", {}).get("contents", [])
+        d = data.get("data", {}) or {}
+        contents = d.get("contents", []) or []
+        cursor = d.get("cursor") or {}
+        nxt = cursor.get("next")
+        has_next = bool(d.get("hasNext"))
+        return contents, nxt, has_next
     except Exception as e:
         print(f"❌ 获取帖子列表失败：{e}")
-        return []
+        return [], None, False
 
 def fetch_comment_replies(comment_id):
     """获取评论的回复（包括 IU 的回复）"""
@@ -375,8 +383,8 @@ def save_to_database(conn, data):
 
 # ==================== 主函数 ====================
 
-def scrape_iu_comments(max_posts=MAX_POSTS):
-    """主函数：抓取 IU 评论数据"""
+def scrape_iu_comments(max_pages=MAX_PAGES):
+    """主函数：按列表页抓取 IU 评论数据（每页 PAGE_SIZE 条，共 max_pages 页）"""
     print("=" * 60)
     print("💕 IU Comment Scraper - API 版本")
     print("=" * 60)
@@ -386,6 +394,7 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
     cursor = conn.cursor()
     print(f"\n📁 数据库：{DB_PATH}")
     print(f"📂 图片目录：{IMAGES_DIR}")
+    print(f"📑 计划抓取列表前 {max_pages} 页（每页约 {PAGE_SIZE} 条）")
     
     # 获取已保存的 comment_id 列表（避免重复抓取）
     cursor.execute("SELECT comment_id FROM iu_comments")
@@ -394,34 +403,30 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
     
     total_saved = 0
     total_skipped = 0
-    total_posts = 0
-    page = 1
+    total_processed = 0
     
-    while total_posts < max_posts:
-        print(f"\n📄 获取第 {page} 页...")
-        posts = fetch_post_list(page=page)
+    list_cursor = None
+    for page in range(1, max_pages + 1):
+        print(f"\n📄 获取第 {page}/{max_pages} 页...")
+        posts, list_cursor, has_next = fetch_post_list(next_cursor=list_cursor)
         
         if not posts:
-            print("⚠️ 没有更多数据了")
+            print("⚠️ 本页无数据，结束")
             break
         
         print(f"   获取到 {len(posts)} 条帖子")
         
-        for i, post in enumerate(posts, 1):
-            if total_posts >= max_posts:
-                break
-            
+        for post in posts:
+            total_processed += 1
             comment_id = post.get("contentId", "")
-            post_id = post.get("postId", "")
             
             # 检查是否已存在
             if comment_id in existing_ids:
-                print(f"\n   [{total_posts + 1}] ⏭️  跳过已保存的帖子 {comment_id}")
+                print(f"\n   [页{page} #{total_processed}] ⏭️  跳过已保存 {comment_id}")
                 total_skipped += 1
-                total_posts += 1
                 continue
             
-            print(f"\n   [{total_posts + 1}] 处理帖子 {comment_id}...")
+            print(f"\n   [页{page} #{total_processed}] 处理 {comment_id}...")
             
             # 处理帖子
             data = process_post(post)
@@ -443,18 +448,20 @@ def scrape_iu_comments(max_posts=MAX_POSTS):
                 if data["images"]:
                     print(f"   🖼️ 图片：{len(data['images'])} 张")
             
-            total_posts += 1
             # 随机延迟，模拟真人操作
             time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
         
-        page += 1
+        if not has_next or list_cursor is None:
+            print("📌 列表已无下一页")
+            break
         # 页间更大的随机延迟
-        time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
+        if page < max_pages:
+            time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
     
     conn.close()
     
     print("\n" + "=" * 60)
-    print(f"✨ 完成！新保存 {total_saved} 条，跳过 {total_skipped} 条")
+    print(f"✨ 完成！本轮处理 {total_processed} 条，新保存 {total_saved} 条，跳过 {total_skipped} 条")
     print("=" * 60)
     
     return {

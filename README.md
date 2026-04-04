@@ -11,8 +11,9 @@ git clone https://github.com/blackstoneblackstone/blackstone-skills.git
 技能目录结构：
 ```
 blackstone-skills/
-├── iu-comment-scraper/    # IU 评论抓取
-└── sql-toolkit-1.0.0/     # SQL 工具包
+├── markdown-cn-en-writing/  # 中英混排 Markdown 书写规范
+├── iu-comment-scraper/      # IU 评论抓取
+└── sql-toolkit-1.0.0/       # SQL 工具包
 ```
 
 ## 提交技能
@@ -25,5 +26,6 @@ blackstone-skills/
 
 | 技能 | 说明 |
 |------|------|
+| markdown-cn-en-writing | 中英混排 Markdown 排版要点（标点、空格、标题、数字等） |
 | iu-comment-scraper | 爬取 berriz.in 网站 IU 相关内容评论 |
 | sql-toolkit-1.0.0 | SQL 数据库工具包（SQLite/PostgreSQL/MySQL） |

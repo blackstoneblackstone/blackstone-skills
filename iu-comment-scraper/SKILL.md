@@ -34,7 +34,6 @@ AI 会自动：
 ### 命令行运行
 
 ```bash
-cd /path/to/iu-comment-scraper
 python3 scripts/iu_api_scraper.py
 ```
 
@@ -113,10 +112,6 @@ IMAGES_DIR = SCRIPT_DIR / "images"
 ```
 
 ## 注意事项
-
-### ⚠️ Cookie 有效期
-
-API 需要登录 Cookie，Cookie 过期后需要从浏览器重新复制。
 
 ### 🔄 翻译限制
 

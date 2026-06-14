@@ -314,14 +314,14 @@ def create_post_file(title: str, content: str, blog_path: Path, categories: list
 
 
 def commit_and_push(blog_path: Path, title: str):
-    """提交并推送到 GitHub"""
+    """提交并推送到 GitHub（禁止 force push，必须先同步远程）"""
     env = {}
     if SSH_KEY_PATH.exists():
         env["GIT_SSH_COMMAND"] = f"ssh -i {SSH_KEY_PATH}"
-    
+
     # 添加文件
     run_git_command(["git", "add", "."], cwd=blog_path, env=env)
-    
+
     # 提交
     commit_msg = f"Add post: {title}\n\n🤖 Generated with [Qoder][https://qoder.com]"
     code, stdout, stderr = run_git_command(
@@ -329,22 +329,38 @@ def commit_and_push(blog_path: Path, title: str):
         cwd=blog_path,
         env=env
     )
-    
+
     if code != 0 and "nothing to commit" not in stderr.lower():
         print(f"⚠️ 提交警告: {stderr}")
-    
-    # 推送
+
+    # 推送前先拉取远程最新代码，避免非 fast-forward
+    print(f"🔄 同步远程最新代码...")
+    run_git_command(["git", "pull", "origin", "main"], cwd=blog_path, env=env)
+
+    # 推送（严格禁止 force push）
     print(f"🚀 推送到 GitHub...")
     code, stdout, stderr = run_git_command(
         ["git", "push", "origin", "main"],
         cwd=blog_path,
         env=env
     )
-    
+
     if code != 0:
-        print(f"❌ 推送失败: {stderr}")
-        return False
-    
+        # 如果是非 fast-forward，再次 pull 后重试（仍然禁止 force push）
+        if "fetch first" in stderr.lower() or "non-fast-forward" in stderr.lower():
+            print(f"⚠️ 远程有更新，重新同步...")
+            run_git_command(["git", "pull", "origin", "main"], cwd=blog_path, env=env)
+            code, stdout, stderr = run_git_command(
+                ["git", "push", "origin", "main"],
+                cwd=blog_path,
+                env=env
+            )
+
+        if code != 0:
+            print(f"❌ 推送失败: {stderr}")
+            print(f"🚫 禁止强制推送。请手动解决冲突后重试。")
+            return False
+
     print(f"✅ 推送成功!")
     return True
 

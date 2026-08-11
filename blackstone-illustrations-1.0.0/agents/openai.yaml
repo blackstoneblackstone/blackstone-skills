@@ -1,0 +1,9 @@
+interface:
+  display_name: "Blackstone 配图"
+  short_description: "为中文内容生成 Blackstone 3D IP 正文配图"
+  icon_small: "./assets/blackstone-icon.png"
+  icon_large: "./assets/blackstone-reference.png"
+  brand_color: "#49E53D"
+  default_prompt: "Use $blackstone-illustrations 为这篇中文文章设计并生成几张 Blackstone 3D 正文配图。"
+policy:
+  allow_implicit_invocation: true

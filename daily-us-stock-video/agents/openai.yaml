@@ -1,0 +1,4 @@
+interface:
+  display_name: "每日美股分析视频"
+  short_description: "从最新参考视频生成合规、同步并保护隐私的每日美股分析节目"
+  default_prompt: "使用 $daily-us-stock-video 生成今天的美股分析视频。"

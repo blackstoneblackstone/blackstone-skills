@@ -1,0 +1,4 @@
+interface:
+  display_name: "CosyVoice / MiniMax TTS"
+  short_description: "使用 CosyVoice 或 MiniMax 将文字合成为本地语音文件"
+  default_prompt: "Use $cosyvoice-tts to convert Chinese text into a verified local audio file with CosyVoice or MiniMax."
